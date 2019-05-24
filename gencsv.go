@@ -53,7 +53,9 @@ func main() {
 
 	// Write out the header
 	head := []string{"State", "StateId", "County", "Tract", "BlockGroup", "CBSA", "Name", "Lon", "Lat",
-		"TotalPop", "BlackOnlyPop", "WhiteOnlyPop", "CBSATotalPop", "CBSAWhiteOnlyPop", "CBSABlackOnlyPop",
+		"TotalPop", "BlackOnlyPop", "WhiteOnlyPop",
+		"CBSATotalPop", "CBSABlackOnlyPop", "CBSAWhiteOnlyPop",
+		"PCBSATotalPop", "PCBSABlackOnlyPop", "PCBSAWhiteOnlyPop", "PCBSARadius",
 		"LocalEntropy", "RegionalEntropy", "BlackIsolation",
 		"WhiteIsolation", "BODissimilarity", "WODissimilarity", "Neighbors", "RegionPop", "RegionRadius"}
 	err = outw.Write(head)
@@ -61,7 +63,7 @@ func main() {
 		panic(err)
 	}
 
-	cr := make([]string, 24)
+	cr := make([]string, len(head))
 	for {
 		var r seglib.Region
 		err := dec.Decode(&r)
@@ -86,15 +88,19 @@ func main() {
 		cr[12] = fmt.Sprintf("%d", r.CBSATotalPop)
 		cr[13] = fmt.Sprintf("%d", r.CBSABlackOnlyPop)
 		cr[14] = fmt.Sprintf("%d", r.CBSAWhiteOnlyPop)
-		cr[15] = fmt.Sprintf("%.3f", r.LocalEntropy)
-		cr[16] = fmt.Sprintf("%.3f", r.RegionalEntropy)
-		cr[17] = fmt.Sprintf("%.3f", r.BlackIsolation)
-		cr[18] = fmt.Sprintf("%.3f", r.WhiteIsolation)
-		cr[19] = fmt.Sprintf("%.3f", r.BODissimilarity)
-		cr[20] = fmt.Sprintf("%.3f", r.WODissimilarity)
-		cr[21] = fmt.Sprintf("%d", r.Neighbors)
-		cr[22] = fmt.Sprintf("%d", r.RegionPop)
-		cr[23] = fmt.Sprintf("%.2f", r.RegionRadius)
+		cr[15] = fmt.Sprintf("%d", r.PCBSATotalPop)
+		cr[16] = fmt.Sprintf("%d", r.PCBSABlackOnlyPop)
+		cr[17] = fmt.Sprintf("%d", r.PCBSAWhiteOnlyPop)
+		cr[18] = fmt.Sprintf("%.3f", r.PCBSARadius)
+		cr[19] = fmt.Sprintf("%.3f", r.LocalEntropy)
+		cr[20] = fmt.Sprintf("%.3f", r.RegionalEntropy)
+		cr[21] = fmt.Sprintf("%.3f", r.BlackIsolation)
+		cr[22] = fmt.Sprintf("%.3f", r.WhiteIsolation)
+		cr[23] = fmt.Sprintf("%.3f", r.BODissimilarity)
+		cr[24] = fmt.Sprintf("%.3f", r.WODissimilarity)
+		cr[25] = fmt.Sprintf("%d", r.Neighbors)
+		cr[26] = fmt.Sprintf("%d", r.RegionPop)
+		cr[27] = fmt.Sprintf("%.2f", r.RegionRadius)
 
 		if len(head) != len(cr) {
 			panic("len(head) ! = len(cr)\n[]")

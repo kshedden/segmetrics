@@ -31,6 +31,12 @@ type Region struct {
 	CBSABlackOnlyPop int
 	CBSAWhiteOnlyPop int
 
+	// Pseudo-CBSA
+	PCBSATotalPop     int
+	PCBSABlackOnlyPop int
+	PCBSAWhiteOnlyPop int
+	PCBSARadius       float64
+
 	// These values depend on the region's neighbors
 	RegionPop    int
 	RegionRadius float64

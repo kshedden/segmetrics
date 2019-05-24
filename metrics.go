@@ -20,6 +20,10 @@ import (
 	"gonum.org/v1/gonum/floats"
 )
 
+const (
+	NullCBSA = "99999"
+)
+
 var (
 	year int
 
@@ -103,6 +107,120 @@ func getCBSAStats() {
 	}
 }
 
+type neighborhoodSearch struct {
+	qt    *quadtree.Quadtree
+	buf   []orb.Pointer
+	nbds  []*seglib.Region
+	dists []float64
+	inds  []int
+}
+
+func (ns *neighborhoodSearch) init(qt *quadtree.Quadtree, m int) {
+	ns.qt = qt
+	ns.buf = make([]orb.Pointer, m)
+	ns.nbds = make([]*seglib.Region, m)
+	ns.dists = make([]float64, m)
+	ns.inds = make([]int, m)
+}
+
+// Find enough regions so that the total population exceeds the target population.
+func (ns *neighborhoodSearch) initialCandidates(r *seglib.Region, targetpop int) {
+
+	for k := 8; k <= 256; k *= 2 {
+
+		ns.buf = ns.qt.KNearest(ns.buf, r.Location, k)
+
+		pop := r.TotalPop
+		for _, n := range ns.buf {
+			pop += n.(*seglib.Region).TotalPop
+		}
+
+		if pop > targetpop {
+			break
+		}
+	}
+}
+
+// Sort by increasing distance from the center.
+func (ns *neighborhoodSearch) sortByDist(r *seglib.Region) {
+
+	ns.dists = ns.dists[0:len(ns.buf)]
+	for j, n := range ns.buf {
+		ns.dists[j] = geo.Distance(r.Location, n.(*seglib.Region).Location)
+	}
+	ns.inds = ns.inds[0:len(ns.buf)]
+	floats.Argsort(ns.dists, ns.inds)
+	ns.nbds = ns.nbds[0:0]
+	for _, j := range ns.inds {
+		ns.nbds = append(ns.nbds, ns.buf[j].(*seglib.Region))
+	}
+}
+
+// Exclude anything equal to or greater than the maximum radius
+func (ns *neighborhoodSearch) trimRegion(r *seglib.Region) bool {
+
+	i := sort.SearchFloat64s(ns.dists, maxradius*metersPerMile)
+	if i == 0 {
+		os.Stderr.WriteString("Skipping region:\n")
+		os.Stderr.WriteString(fmt.Sprintf("%+v\n", r))
+		return false
+	} else if i < len(ns.dists) {
+		ns.nbds = ns.nbds[0:i]
+		ns.inds = ns.inds[0:i]
+		ns.dists = ns.dists[0:i]
+	}
+
+	return true
+}
+
+// Find the subset with total population closest to targetpop
+func (ns *neighborhoodSearch) matchTarget(targetpop int) {
+
+	var k int
+	rpop := 0
+	for k = range ns.nbds {
+		rpop += ns.nbds[k].TotalPop
+		if rpop > targetpop {
+			break
+		}
+	}
+
+	if k > 0 {
+		lastpop := ns.nbds[k].TotalPop
+		if rpop-targetpop > targetpop-(rpop-lastpop) {
+			k--
+			rpop -= lastpop
+		}
+	}
+
+	ns.nbds = ns.nbds[0 : k+1]
+	ns.dists = ns.dists[0 : k+1]
+}
+
+func (ns *neighborhoodSearch) findNeighborhood(r *seglib.Region, targetpop int) ([]*seglib.Region, []float64) {
+
+	ns.initialCandidates(r, targetpop)
+	ns.sortByDist(r)
+
+	if !ns.trimRegion(r) {
+		return nil, nil
+	}
+
+	ns.matchTarget(targetpop)
+
+	return ns.nbds, ns.dists
+}
+
+func clip01(x float64) float64 {
+	if x < 0 {
+		return 0
+	}
+	if x > 1 {
+		return 1
+	}
+	return x
+}
+
 func main() {
 
 	flag.IntVar(&year, "year", 0, "Census year")
@@ -127,7 +245,7 @@ func main() {
 	case "tract":
 		sumlevel = seglib.Tract
 	default:
-		msg := fmt.Sprintf("Unkown sumlevel '%s'\n", sl)
+		msg := fmt.Sprintf("Unknown sumlevel '%s'\n", sl)
 		panic(msg)
 	}
 
@@ -137,7 +255,6 @@ func main() {
 	}
 
 	getRegions()
-
 	getCBSAStats()
 
 	qt := quadtree.New(orb.Bound{Min: orb.Point{-180, -60},
@@ -158,68 +275,29 @@ func main() {
 	defer gid.Close()
 	enc := gob.NewEncoder(gid)
 
-	buf := make([]orb.Pointer, 1000)
-	nbds := make([]*seglib.Region, 1000)
-	dists := make([]float64, 1000)
-	inds := make([]int, 1000)
+	var ns neighborhoodSearch
+	ns.init(qt, 1000)
+
 	for _, r := range regions {
 
-		// Find enough regions to reach the target population
-		var nbd []orb.Pointer
-		for k := 8; k <= 256; k *= 2 {
-
-			nbd = qt.KNearest(buf, r.Location, k)
-
-			pop := r.TotalPop
-			for _, n := range nbd {
-				pop += n.(*seglib.Region).TotalPop
-			}
-
-			if pop > targetpop {
-				break
-			}
+		// The pseudo-CBSA
+		nbds, dists := ns.findNeighborhood(r, 100000)
+		r.PCBSATotalPop = 0
+		r.PCBSABlackOnlyPop = 0
+		r.PCBSAWhiteOnlyPop = 0
+		for _, z := range nbds {
+			r.PCBSATotalPop += z.TotalPop
+			r.PCBSABlackOnlyPop += z.BlackOnlyPop
+			r.PCBSAWhiteOnlyPop += z.WhiteOnlyPop
+		}
+		if len(dists) > 0 {
+			r.PCBSARadius = dists[len(dists)-1] / metersPerMile
 		}
 
-		// Sort by increasing distance from the center
-		dists = dists[0:len(nbd)]
-		for j, n := range nbd {
-			dists[j] = geo.Distance(r.Location, n.(*seglib.Region).Location)
-		}
-		inds = inds[0:len(nbd)]
-		floats.Argsort(dists, inds)
-		nbds = nbds[0:0]
-		for _, j := range inds {
-			nbds = append(nbds, nbd[j].(*seglib.Region))
-		}
-
-		// Exclude anything equal to or greater than the maximum radius
-		i := sort.SearchFloat64s(dists, maxradius*metersPerMile)
-		if i == 0 {
-			os.Stderr.WriteString("Skipping region:\n")
-			os.Stderr.WriteString(fmt.Sprintf("%+v\n", r))
+		// The local region
+		nbds, dists = ns.findNeighborhood(r, targetpop)
+		if len(nbds) == 0 {
 			continue
-		} else if i < len(dists) {
-			nbds = nbds[0:i]
-			inds = inds[0:i]
-			dists = dists[0:i]
-		}
-
-		// Find the subset with total population closest to targetpop
-		var k int
-		rpop := 0
-		for k = 0; k < len(nbds); k++ {
-			rpop += nbds[k].TotalPop
-			if rpop > targetpop {
-				break
-			}
-		}
-		if k < len(nbds) {
-			lastpop := nbds[k].TotalPop
-			if rpop-targetpop > targetpop-(rpop-lastpop) {
-				k--
-				rpop -= lastpop
-			}
-			nbds = nbds[0 : k+1]
 		}
 
 		radius := dists[len(dists)-1]
@@ -276,30 +354,65 @@ func main() {
 		// Isolation and dissimilarity measures
 		{
 			numer := float64(nTotal - nBlack)
-			denom := float64(r.CBSATotalPop - r.CBSABlackOnlyPop)
-			r.BlackIsolation = 1 - numer/denom
+			var denom float64
+			if r.CBSA == NullCBSA {
+				denom = float64(r.PCBSATotalPop - r.PCBSABlackOnlyPop)
+			} else {
+				denom = float64(r.CBSATotalPop - r.CBSABlackOnlyPop)
+			}
+			r.BlackIsolation = clip01(1 - numer/denom)
 
-			qr1 := float64(nBlack) / float64(r.CBSABlackOnlyPop)
-			qr2 := float64(nTotal-nBlack) / float64(r.CBSATotalPop-r.CBSABlackOnlyPop)
+			var qr1, qr2 float64
+			if r.CBSA == NullCBSA {
+				qr1 = float64(nBlack) / float64(r.PCBSABlackOnlyPop)
+				qr1 = clip01(qr1)
+				qr2 = float64(nTotal-nBlack) / float64(r.PCBSATotalPop-r.PCBSABlackOnlyPop)
+				qr2 = clip01(qr2)
+			} else {
+				qr1 = float64(nBlack) / float64(r.CBSABlackOnlyPop)
+				qr1 = clip01(qr1)
+				qr2 = float64(nTotal-nBlack) / float64(r.CBSATotalPop-r.CBSABlackOnlyPop)
+				qr2 = clip01(qr2)
+			}
 			r.BODissimilarity = math.Abs(qr1 - qr2)
 
 			numer = float64(nTotal - nWhite)
-			denom = float64(r.CBSATotalPop - r.CBSAWhiteOnlyPop)
-			r.WhiteIsolation = 1 - numer/denom
+			if r.CBSA == NullCBSA {
+				denom = float64(r.PCBSATotalPop - r.PCBSAWhiteOnlyPop)
+			} else {
+				denom = float64(r.CBSATotalPop - r.CBSAWhiteOnlyPop)
+			}
+			r.WhiteIsolation = clip01(1 - numer/denom)
 
-			qr1 = float64(nWhite) / float64(r.CBSAWhiteOnlyPop)
-			qr2 = float64(nTotal-nWhite) / float64(r.CBSATotalPop-r.CBSAWhiteOnlyPop)
+			if r.CBSA == NullCBSA {
+				qr1 = float64(nWhite) / float64(r.PCBSAWhiteOnlyPop)
+				qr2 = float64(nTotal-nWhite) / float64(r.PCBSATotalPop-r.PCBSAWhiteOnlyPop)
+			} else {
+				qr1 = float64(nWhite) / float64(r.CBSAWhiteOnlyPop)
+				qr2 = float64(nTotal-nWhite) / float64(r.CBSATotalPop-r.CBSAWhiteOnlyPop)
+			}
 			r.WODissimilarity = math.Abs(qr1 - qr2)
 		}
 
 		// Regional entropy
 		{
 			pBlack := nBlack / nTotal
+			if pBlack < 1e-4 {
+				pBlack = 1e-4
+			}
 			pWhite := nWhite / nTotal
+			if pWhite < 1e-4 {
+				pWhite = 1e-4
+			}
 			pOther := 1 - pBlack - pWhite
-			r.RegionalEntropy = -pBlack * math.Log(pBlack)
-			r.RegionalEntropy -= pWhite * math.Log(pWhite)
-			r.RegionalEntropy -= pOther * math.Log(pOther)
+			if pOther < 1e-4 {
+				pOther = 1e-4
+			}
+			if nTotal > 0 {
+				r.RegionalEntropy = -pBlack * math.Log(pBlack)
+				r.RegionalEntropy -= pWhite * math.Log(pWhite)
+				r.RegionalEntropy -= pOther * math.Log(pOther)
+			}
 		}
 
 		err := enc.Encode(r)

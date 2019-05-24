@@ -12,10 +12,12 @@ import (
 	"strings"
 
 	"github.com/fogleman/gg"
+	"github.com/golang/freetype/truetype"
 	shp "github.com/jonas-p/go-shp"
 	"github.com/kshedden/segregation/seglib"
 	colorful "github.com/lucasb-eyer/go-colorful"
 	"github.com/paulmach/orb"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 var (
@@ -244,7 +246,7 @@ func main() {
 	// fields from the attribute table (DBF)
 	fields := shapef.Fields()
 
-	dc := gg.NewContext(1000, 1000)
+	dc := gg.NewContext(1200, 1000)
 
 	// loop through all features in the shapefile
 	for shapef.Next() {
@@ -286,6 +288,32 @@ func main() {
 		dc.Fill()
 		dc.ClearPath()
 	}
+
+	// Draw a colorbar
+	dc.SetRGB(1, 1, 1)
+	dc.SetLineWidth(10)
+	for k := 0; k < 400; k++ {
+		dc.MoveTo(1030, float64(100+k))
+		dc.LineTo(1120, float64(100+k))
+		dc.ClosePath()
+		color := keypoints.GetInterpolatedColorFor(float64(k) / 400)
+		dc.SetColor(color)
+		dc.Stroke()
+		dc.ClearPath()
+	}
+
+	// Draw colorbar labels
+	font, err := truetype.Parse(goregular.TTF)
+	if err != nil {
+		panic("!!")
+	}
+	face := truetype.NewFace(font, &truetype.Options{
+		Size: 20,
+	})
+	dc.SetFontFace(face)
+	dc.SetRGB(1, 1, 1)
+	dc.DrawString(fmt.Sprintf("%.4f", mina), 1130, 100)
+	dc.DrawString(fmt.Sprintf("%.4f", maxa), 1130, 500)
 
 	if *outfile == "" {
 		panic("File name is required")
