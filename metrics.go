@@ -9,10 +9,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"os"
+	"path"
 	"sort"
+	"strings"
 
+	shp "github.com/jonas-p/go-shp"
 	"github.com/kshedden/segregation/seglib"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geo"
@@ -30,6 +34,9 @@ var (
 	sumlevel seglib.RegionType
 
 	regions []*seglib.Region
+
+	// Bounding boxes of the regions (only used for COUSUBs)
+	regboxes map[string]orb.Bound
 
 	// Maximum radius in miles
 	maxradius float64
@@ -51,6 +58,8 @@ func getRegions() {
 
 	var fname string
 	switch sumlevel {
+	case seglib.CountySubdivision:
+		fname = fmt.Sprintf("segregation_raw_cousub_%4d.gob.gz", year)
 	case seglib.Tract:
 		fname = fmt.Sprintf("segregation_raw_tract_%4d.gob.gz", year)
 	case seglib.BlockGroup:
@@ -105,6 +114,103 @@ func getCBSAStats() {
 		r.CBSABlackOnlyPop = x[1]
 		r.CBSAWhiteOnlyPop = x[2]
 	}
+}
+
+// Find the quadrant where q lies relative to r.
+func quad(r, q orb.Point) int {
+	angle := math.Atan2(q[1]-r[1], q[0]-r[0])
+	return int(math.Floor(2 * (1 + angle/math.Pi)))
+}
+
+// Find enough regions so that the total population exceeds the target population.
+func selectByDirection(qt *quadtree.Quadtree, r *seglib.Region) ([4]*seglib.Region, int) {
+
+	var nbrs [4]*seglib.Region
+	var buf []orb.Pointer
+	var n int
+
+	for k := 4; k <= 10; k++ {
+
+		buf = qt.KNearest(buf, r.Location, k)
+
+		for _, n := range buf {
+			nr := n.(*seglib.Region)
+			q := quad(r.Location, nr.Location)
+			nbrs[q] = nr
+		}
+
+		n = 0
+		for _, x := range nbrs {
+			if x != nil {
+				n++
+			}
+		}
+	}
+
+	return nbrs, n
+}
+
+func getShapes() map[string]orb.Bound {
+
+	shapes := make(map[string]orb.Bound)
+
+	files, err := ioutil.ReadDir(path.Join("shapefiles", "cousub"))
+	if err != nil {
+		panic(err)
+	}
+
+	for _, file := range files {
+
+		if !strings.HasSuffix(file.Name(), ".shp") {
+			continue
+		}
+
+		sf := path.Join("shapefiles", "cousub", file.Name())
+		shapef, err := shp.Open(sf)
+		if err != nil {
+			panic(err)
+		}
+		defer shapef.Close()
+
+		// fields from the attribute table (DBF)
+		fields := shapef.Fields()
+		if fields[0].String() != "GEO_ID" {
+			panic("inconsistent layout")
+		}
+
+		// Loop through all features in the shapefile
+		for shapef.Next() {
+			n, p := shapef.Shape()
+			geoid := shapef.ReadAttribute(n, 0)
+			cousub := geoid[9:] // State + County + Cousub
+			pb := p.BBox()
+			pmin := orb.Point{pb.MinX, pb.MinY}
+			pmax := orb.Point{pb.MaxX, pb.MaxY}
+			box := orb.MultiPoint{pmin, pmax}.Bound()
+
+			shapes[cousub] = box
+		}
+	}
+
+	return shapes
+}
+
+func findNeighbors(qt *quadtree.Quadtree, r *seglib.Region) []*seglib.Region {
+
+	buf := qt.KNearest(nil, r.Location, 20)
+	var nbd []*seglib.Region
+
+	tbox := regboxes[r.Cousub]
+
+	for _, q := range buf {
+		qr := q.(*seglib.Region)
+		qbox := regboxes[qr.Cousub]
+		if tbox.Pad(0.001).Intersects(qbox) {
+			nbd = append(nbd, qr)
+		}
+	}
+
+	return nbd
 }
 
 type neighborhoodSearch struct {
@@ -226,7 +332,7 @@ func main() {
 	flag.IntVar(&year, "year", 0, "Census year")
 	var sl string
 	flag.StringVar(&sl, "sumlevel", "", "Summary level ('blockgroup' or 'tract')")
-	flag.IntVar(&targetpop, "targetpop", 25000, "Target population")
+	flag.IntVar(&targetpop, "targetpop", 0, "Target population")
 	flag.Float64Var(&maxradius, "maxradius", 30, "Maximum radius in miles")
 	flag.Float64Var(&escale, "escale", 2.0, "Exponential scaling parameter")
 	var outname string
@@ -240,10 +346,12 @@ func main() {
 	}
 
 	switch sl {
-	case "blockgroup":
-		sumlevel = seglib.BlockGroup
+	case "cousub":
+		sumlevel = seglib.CountySubdivision
 	case "tract":
 		sumlevel = seglib.Tract
+	case "blockgroup":
+		sumlevel = seglib.BlockGroup
 	default:
 		msg := fmt.Sprintf("Unknown sumlevel '%s'\n", sl)
 		panic(msg)
@@ -254,8 +362,17 @@ func main() {
 		panic(msg)
 	}
 
+	if sumlevel == seglib.CountySubdivision && targetpop != 0 {
+		msg := "When using county subdivisions, do not set targetpop"
+		panic(msg)
+	}
+
 	getRegions()
 	getCBSAStats()
+
+	if sumlevel == seglib.CountySubdivision {
+		regboxes = getShapes()
+	}
 
 	qt := quadtree.New(orb.Bound{Min: orb.Point{-180, -60},
 		Max: orb.Point{20, 80}})
@@ -280,24 +397,32 @@ func main() {
 
 	for _, r := range regions {
 
-		// The pseudo-CBSA
-		nbds, dists := ns.findNeighborhood(r, 100000)
-		r.PCBSATotalPop = 0
-		r.PCBSABlackOnlyPop = 0
-		r.PCBSAWhiteOnlyPop = 0
-		for _, z := range nbds {
-			r.PCBSATotalPop += z.TotalPop
-			r.PCBSABlackOnlyPop += z.BlackOnlyPop
-			r.PCBSAWhiteOnlyPop += z.WhiteOnlyPop
-		}
-		if len(dists) > 0 {
-			r.PCBSARadius = dists[len(dists)-1] / metersPerMile
+		// The outer container based on cardinal directions
+		if sumlevel == seglib.CountySubdivision {
+			cdn := findNeighbors(qt, r)
+			r.PCBSATotalPop = r.TotalPop
+			r.PCBSABlackOnlyPop = r.BlackOnlyPop
+			r.PCBSAWhiteOnlyPop = r.WhiteOnlyPop
+			for _, z := range cdn {
+				if z != nil {
+					r.PCBSATotalPop += z.TotalPop
+					r.PCBSABlackOnlyPop += z.BlackOnlyPop
+					r.PCBSAWhiteOnlyPop += z.WhiteOnlyPop
+				}
+			}
 		}
 
 		// The local region
-		nbds, dists = ns.findNeighborhood(r, targetpop)
-		if len(nbds) == 0 {
-			continue
+		var nbds []*seglib.Region
+		var dists []float64
+		if sumlevel != seglib.CountySubdivision {
+			nbds, dists = ns.findNeighborhood(r, targetpop)
+			if len(nbds) == 0 {
+				continue
+			}
+		} else {
+			nbds = []*seglib.Region{r}
+			dists = []float64{0}
 		}
 
 		radius := dists[len(dists)-1]
@@ -324,9 +449,10 @@ func main() {
 				w = math.Exp(-escale * dists[j] / radius)
 			}
 
-			popt := float64(z.TotalPop)
-			bopt := float64(z.BlackOnlyPop)
-			wopt := float64(z.WhiteOnlyPop)
+			// Use pseudocounts to avoid log(0) in entropy.
+			popt := 2 + float64(z.TotalPop)
+			bopt := 1 + float64(z.BlackOnlyPop)
+			wopt := 1 + float64(z.WhiteOnlyPop)
 
 			nTotal += w * popt
 			nBlack += w * bopt
@@ -415,7 +541,7 @@ func main() {
 			}
 		}
 
-		err := enc.Encode(r)
+		err = enc.Encode(r)
 		if err != nil {
 			panic(err)
 		}

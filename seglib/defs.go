@@ -9,6 +9,7 @@ type RegionType uint8
 const (
 	Tract RegionType = iota
 	BlockGroup
+	CountySubdivision
 )
 
 type Region struct {
@@ -17,6 +18,7 @@ type Region struct {
 	State        string
 	StateId      string
 	County       string
+	Cousub       string
 	Tract        string
 	BlockGroup   string
 	Name         string
@@ -35,7 +37,6 @@ type Region struct {
 	PCBSATotalPop     int
 	PCBSABlackOnlyPop int
 	PCBSAWhiteOnlyPop int
-	PCBSARadius       float64
 
 	// These values depend on the region's neighbors
 	RegionPop    int

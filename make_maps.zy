@@ -1,35 +1,32 @@
-(def varbuf [["PBlack" 40000] ["PWhite" 40000] ["LocalEntropy" 40000] ["RegionalEntropy" 40000]
-             ["BlackIsolation" 40000] ["WhiteIsolation" 40000] ["BODissimilarity" 40000]
-             ["WODissimilarity" 40000]])
+(def vars ["PBlack" "PWhite" "LocalEntropy" "RegionalEntropy" "BlackIsolation"
+             "WhiteIsolation" "BODissimilarity" "WODissimilarity"])
 (def cities (hash "chicago":"-87.9395,41.5446,-87.5245,42.0229"
                   "seattle":"-122.6,47.1,-121.7,48.1"
                   "detroit":"-83.2877,42.2555,-82.9105,42.4502"
                   "st_louis":"-90.9,38.4,-89.80,39.2"))
 (def state (hash "chicago":"17" "seattle":"53" "detroit":"26" "st_louis":"29"))
-(def regions ["tract"])
-
+(def region "blockgroup")
 (def cmd0 "go run maps.go -attribute=%s -outfile=%s -buffer=%d -state=%s -region=%s -bbox=\"%s\"")
 
 (def html ["<html>"])
 
 (range city bbox cities
-	(range i vb varbuf
-		(def attr (aget vb 0))
-		(def buf (aget vb 1))
-		(range k reg regions
-			(def outfile (sprintf "%s_%s_%d_%s.png" city attr buf reg))
-			(def st (hget state city))
-			(def outpath (sprintf "maps_png/%s" outfile))
-			(def cmd (sprintf cmd0 attr outpath buf st reg bbox))
+	(range i attr vars
+		(def bufs (cond (== region "cousub") [0] [25000 45000 65000]))
+		(range j buf bufs
+	    	(def outfile (sprintf "%s_%s_%d_%s.png" city attr buf region))
+		    (def st (hget state city))
+			(def outpath (sprintf "maps_png/%s/%s" region outfile))
+			(def cmd (sprintf cmd0 attr outpath buf st region bbox))
 			(println cmd)
 			(def rv (system cmd))
 			(println rv)
-			(def link (sprintf "<a href=%s>%s</a><br>" outfile outfile))
-			(set html (append html link))
+		    (def link (sprintf "<a href=%s>%s</a><br>" outfile outfile))
+		    (set html (append html link))
 		)
 	)
 )
 
 (set html (append html "</html>"))
-(system "rm -f maps_png/index.html")
-(writef html "maps_png/index.html")
+(system (sprintf "rm -f maps_png/%s/index.html" region))
+(writef html (sprintf "maps_png/%s/index.html" region))

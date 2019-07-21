@@ -22,10 +22,10 @@ import (
 
 var (
 	// The census region boundaries
-	shapefile = "gz_2010_##_140_00_500k.shp"
+	shapefile = "gz_2010_##_!!!_00_500k.shp"
 
 	// The segregation metrics
-	segmetricsfile = "segregation_!!!!!_2010_#####.gob.gz"
+	segmetricsfile = "segregation_!!!!!_2010#####.gob.gz"
 
 	// Only show regions intersecting with this bounding box
 	bbox orb.Bound
@@ -81,7 +81,7 @@ func MustParseHex(s string) colorful.Color {
 	return c
 }
 
-func getSeg(fname string) map[string]*seglib.Region {
+func getSeg(fname string, regtype seglib.RegionType) map[string]*seglib.Region {
 
 	inf, err := os.Open(fname)
 	if err != nil {
@@ -124,7 +124,17 @@ func getSeg(fname string) map[string]*seglib.Region {
 			}
 		}
 
-		id := r.StateId + r.Tract
+		var id string
+		switch regtype {
+		case seglib.CountySubdivision:
+			id = r.Cousub
+		case seglib.Tract:
+			id = r.Tract
+		case seglib.BlockGroup:
+			id = r.BlockGroup
+		default:
+			panic("unknown region")
+		}
 		regions[id] = &r
 	}
 
@@ -183,14 +193,23 @@ func main() {
 	bboxf := flag.String("bbox", "", "Bounding box")
 	buffer := flag.Int("buffer", 0, "Buffer population")
 	state := flag.String("state", "", "State")
-	region := flag.String("region", "", "tract or blockgroup")
+	region := flag.String("region", "", "cousub, tract, or blockgroup")
 	flag.Parse()
 
+	var regtype seglib.RegionType
 	switch *region {
+	case "cousub":
+		if *buffer != 0 {
+			msg := "'buffer' must be 0 when region is 'cousub'"
+			panic(msg)
+		}
+		regtype = seglib.CountySubdivision
 	case "tract":
+		regtype = seglib.Tract
 	case "blockgroup":
+		regtype = seglib.BlockGroup
 	default:
-		panic("region must be either 'tract' or 'blockgroup'")
+		panic("region must be one of 'cousub', 'tract', or 'blockgroup'")
 	}
 
 	scale01 = false
@@ -222,6 +241,16 @@ func main() {
 	}
 
 	shapefile = strings.Replace(shapefile, "##", *state, 1)
+	switch regtype {
+	case seglib.CountySubdivision:
+		shapefile = strings.Replace(shapefile, "!!!", "060", 1)
+	case seglib.Tract:
+		shapefile = strings.Replace(shapefile, "!!!", "140", 1)
+	case seglib.BlockGroup:
+		shapefile = strings.Replace(shapefile, "!!!", "150", 1)
+	default:
+		panic("Unkown region type")
+	}
 
 	parseBbox(*bboxf)
 
@@ -231,9 +260,16 @@ func main() {
 	xf = 1000 / (bbox.Max[0] - bbox.Min[0])
 	yf = 1000 / (bbox.Max[1] - bbox.Min[1])
 
-	segmetricsfile = strings.Replace(segmetricsfile, "#####", fmt.Sprintf("%d", *buffer), 1)
 	segmetricsfile = strings.Replace(segmetricsfile, "!!!!!", *region, 1)
-	regions := getSeg(segmetricsfile)
+	switch regtype {
+	case seglib.CountySubdivision:
+		segmetricsfile = strings.Replace(segmetricsfile, "#####", "", 1)
+	case seglib.Tract, seglib.BlockGroup:
+		segmetricsfile = strings.Replace(segmetricsfile, "#####", fmt.Sprintf("_%d", *buffer), 1)
+	default:
+		panic("Unkown region type")
+	}
+	regions := getSeg(segmetricsfile, regtype)
 
 	// Open a shapefile for reading
 	sf := path.Join("shapefiles", *region, shapefile)
@@ -250,13 +286,26 @@ func main() {
 
 	// loop through all features in the shapefile
 	for shapef.Next() {
+
 		n, p := shapef.Shape()
 
 		attrs := make(map[string]string)
 		for k, f := range fields {
 			attrs[f.String()] = shapef.ReadAttribute(n, k)
 		}
-		id := attrs["STATE"] + attrs["TRACT"]
+		state := attrs["STATE"]
+		county := attrs["COUNTY"]
+		var id string
+		switch regtype {
+		case seglib.CountySubdivision:
+			id = state + county + attrs["COUSUB"]
+		case seglib.Tract:
+			id = state + county + attrs["TRACT"]
+		case seglib.BlockGroup:
+			id = state + county + attrs["TRACT"] + attrs["BLKGRP"]
+		default:
+			panic("Invalid region type")
+		}
 		segdata, ok := regions[id]
 		if !ok {
 			continue

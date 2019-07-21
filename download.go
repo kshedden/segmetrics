@@ -1,3 +1,6 @@
+// Download census redistricting data from:
+//     https://www.census.gov/prod/cen2010/doc/pl94-171.pdf
+
 package main
 
 import (
@@ -28,12 +31,15 @@ func main() {
 
 	for _, state := range seglib.States {
 
+		// The name of a state archive file
 		zipname := fmt.Sprintf("%s%d.pl.zip", state[1], year)
 
+		// Check if we already have the archive
 		pa := path.Join(dir, zipname)
 		_, err := os.Stat(pa)
 		if err != nil && os.IsNotExist(err) {
-			// Get the zip file since we don't already have it
+
+			// Get the zip file if we don't already have it
 			fmt.Printf("Getting %s\n", zipname)
 			pa = path.Join(base, state[0], zipname)
 			cmd := exec.Command("wget", "ftp://"+pa, fmt.Sprintf("--directory-prefix=%s", dir))

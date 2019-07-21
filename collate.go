@@ -34,14 +34,16 @@ func main() {
 
 	flag.IntVar(&year, "year", 0, "Census year")
 	var sl string
-	flag.StringVar(&sl, "sumlevel", "", "Summary level ('blockgroup' or 'tract')")
+	flag.StringVar(&sl, "sumlevel", "", "Summary level ('blockgroup', 'tract', or 'ccd')")
 	flag.Parse()
 
 	switch sl {
-	case "blockgroup":
-		sumlevel = seglib.BlockGroup
+	case "cousub":
+		sumlevel = seglib.CountySubdivision
 	case "tract":
 		sumlevel = seglib.Tract
+	case "blockgroup":
+		sumlevel = seglib.BlockGroup
 	default:
 		msg := fmt.Sprintf("Unkown sumlevel '%s'\n", sl)
 		panic(msg)
@@ -56,6 +58,8 @@ func main() {
 
 	var fname string
 	switch sumlevel {
+	case seglib.CountySubdivision:
+		fname = fmt.Sprintf("segregation_raw_cousub_%4d.gob.gz", year)
 	case seglib.Tract:
 		fname = fmt.Sprintf("segregation_raw_tract_%4d.gob.gz", year)
 	case seglib.BlockGroup:
@@ -136,7 +140,12 @@ func doState(state string) int {
 
 		// Keep only one type of region
 		sumlev := georec[8 : 8+3]
+
 		switch sumlevel {
+		case seglib.CountySubdivision:
+			if sumlev != "060" {
+				continue
+			}
 		case seglib.Tract:
 			if sumlev != "140" {
 				continue
@@ -149,16 +158,29 @@ func doState(state string) int {
 			panic("Unrecognized summary level\n")
 		}
 
-		tract := strings.TrimSpace(georec[54 : 54+6])
-		blockgrp := strings.TrimSpace(georec[60 : 60+1])
+		stateid := georec[27 : 27+2]
+		county := georec[29 : 29+3]
+		cousubPart := georec[36 : 36+5]
+		tractPart := strings.TrimSpace(georec[54 : 54+6])
+		blkgrpPart := strings.TrimSpace(georec[60 : 60+1])
+
+		var tract, blockgrp, cousub string
+		switch sumlevel {
+		case seglib.CountySubdivision:
+			cousub = stateid + county + cousubPart
+		case seglib.Tract:
+			tract = stateid + county + tractPart
+		case seglib.BlockGroup:
+			blockgrp = stateid + county + tractPart + blkgrpPart
+		default:
+			panic("unkown sumlevel")
+		}
 
 		logrecno := georec[18 : 18+7]
 		if logrecno != demorec[4] {
 			panic("Record number mismatch\n")
 		}
 
-		stateid := georec[27 : 27+2]
-		county := georec[29 : 29+3]
 		name := strings.TrimSpace(georec[226 : 226+90])
 		cbsa := georec[112 : 112+5]
 
@@ -192,6 +214,7 @@ func doState(state string) int {
 			State:        state,
 			StateId:      stateid,
 			County:       county,
+			Cousub:       cousub,
 			Tract:        tract,
 			BlockGroup:   blockgrp,
 			Name:         name,

@@ -52,10 +52,10 @@ func main() {
 	dec := gob.NewDecoder(ing)
 
 	// Write out the header
-	head := []string{"State", "StateId", "County", "Tract", "BlockGroup", "CBSA", "Name", "Lon", "Lat",
+	head := []string{"State", "StateId", "County", "Cousub", "Tract", "BlockGroup", "CBSA", "Name", "Lon", "Lat",
 		"TotalPop", "BlackOnlyPop", "WhiteOnlyPop",
 		"CBSATotalPop", "CBSABlackOnlyPop", "CBSAWhiteOnlyPop",
-		"PCBSATotalPop", "PCBSABlackOnlyPop", "PCBSAWhiteOnlyPop", "PCBSARadius",
+		"PCBSATotalPop", "PCBSABlackOnlyPop", "PCBSAWhiteOnlyPop",
 		"LocalEntropy", "RegionalEntropy", "BlackIsolation",
 		"WhiteIsolation", "BODissimilarity", "WODissimilarity", "Neighbors", "RegionPop", "RegionRadius"}
 	err = outw.Write(head)
@@ -76,22 +76,22 @@ func main() {
 		cr[0] = r.State
 		cr[1] = r.StateId
 		cr[2] = r.County
-		cr[3] = fmt.Sprintf("%s", r.Tract)
-		cr[4] = fmt.Sprintf("%s", r.BlockGroup)
-		cr[5] = fmt.Sprintf("%s", r.CBSA)
-		cr[6] = r.Name
-		cr[7] = fmt.Sprintf("%.3f", r.Location[0])
-		cr[8] = fmt.Sprintf("%.3f", r.Location[1])
-		cr[9] = fmt.Sprintf("%d", r.TotalPop)
-		cr[10] = fmt.Sprintf("%d", r.BlackOnlyPop)
-		cr[11] = fmt.Sprintf("%d", r.WhiteOnlyPop)
-		cr[12] = fmt.Sprintf("%d", r.CBSATotalPop)
-		cr[13] = fmt.Sprintf("%d", r.CBSABlackOnlyPop)
-		cr[14] = fmt.Sprintf("%d", r.CBSAWhiteOnlyPop)
-		cr[15] = fmt.Sprintf("%d", r.PCBSATotalPop)
-		cr[16] = fmt.Sprintf("%d", r.PCBSABlackOnlyPop)
-		cr[17] = fmt.Sprintf("%d", r.PCBSAWhiteOnlyPop)
-		cr[18] = fmt.Sprintf("%.3f", r.PCBSARadius)
+		cr[3] = r.Cousub
+		cr[4] = fmt.Sprintf("%s", r.Tract)
+		cr[5] = fmt.Sprintf("%s", r.BlockGroup)
+		cr[6] = fmt.Sprintf("%s", r.CBSA)
+		cr[7] = r.Name
+		cr[8] = fmt.Sprintf("%.3f", r.Location[0])
+		cr[9] = fmt.Sprintf("%.3f", r.Location[1])
+		cr[10] = fmt.Sprintf("%d", r.TotalPop)
+		cr[11] = fmt.Sprintf("%d", r.BlackOnlyPop)
+		cr[12] = fmt.Sprintf("%d", r.WhiteOnlyPop)
+		cr[13] = fmt.Sprintf("%d", r.CBSATotalPop)
+		cr[14] = fmt.Sprintf("%d", r.CBSABlackOnlyPop)
+		cr[15] = fmt.Sprintf("%d", r.CBSAWhiteOnlyPop)
+		cr[16] = fmt.Sprintf("%d", r.PCBSATotalPop)
+		cr[17] = fmt.Sprintf("%d", r.PCBSABlackOnlyPop)
+		cr[18] = fmt.Sprintf("%d", r.PCBSAWhiteOnlyPop)
 		cr[19] = fmt.Sprintf("%.3f", r.LocalEntropy)
 		cr[20] = fmt.Sprintf("%.3f", r.RegionalEntropy)
 		cr[21] = fmt.Sprintf("%.3f", r.BlackIsolation)
