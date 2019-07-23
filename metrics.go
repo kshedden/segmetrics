@@ -331,7 +331,7 @@ func main() {
 
 	flag.IntVar(&year, "year", 0, "Census year")
 	var sl string
-	flag.StringVar(&sl, "sumlevel", "", "Summary level ('blockgroup' or 'tract')")
+	flag.StringVar(&sl, "sumlevel", "", "Summary level ('blockgroup', 'cousub', or 'tract')")
 	flag.IntVar(&targetpop, "targetpop", 0, "Target population")
 	flag.Float64Var(&maxradius, "maxradius", 30, "Maximum radius in miles")
 	flag.Float64Var(&escale, "escale", 2.0, "Exponential scaling parameter")
@@ -357,7 +357,7 @@ func main() {
 		panic(msg)
 	}
 
-	if year != 2010 {
+	if year != 2010 && year != 2000 {
 		msg := fmt.Sprintf("Invalid year '%d'\n", year)
 		panic(msg)
 	}

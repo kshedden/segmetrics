@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"strconv"
@@ -20,12 +19,20 @@ import (
 	"github.com/paulmach/orb"
 )
 
+const (
+	baseDir = "/dsi/stage/stage/cscar-census"
+)
+
 var (
 	dir string
 
 	sumlevel seglib.RegionType
 
 	year int
+
+	// 0, 1, 2 correspond to the target sumlevel code for cousub, tract, and blockgroup,
+	// respectively
+	sumlevelCodes []string
 
 	out *gob.Encoder
 )
@@ -34,7 +41,7 @@ func main() {
 
 	flag.IntVar(&year, "year", 0, "Census year")
 	var sl string
-	flag.StringVar(&sl, "sumlevel", "", "Summary level ('blockgroup', 'tract', or 'ccd')")
+	flag.StringVar(&sl, "sumlevel", "", "Summary level ('blockgroup', 'tract', or 'cousub')")
 	flag.Parse()
 
 	switch sl {
@@ -49,12 +56,16 @@ func main() {
 		panic(msg)
 	}
 
-	if year != 2010 {
-		msg := fmt.Sprintf("Invalid year '%d'\n", year)
-		panic(msg)
+	switch year {
+	case 2010:
+		sumlevelCodes = []string{"060", "140", "150"}
+	case 2000:
+		sumlevelCodes = []string{"060", "140", "740"}
+	default:
+		panic("invalid year")
 	}
 
-	dir = fmt.Sprintf("data%4d", year)
+	dir = path.Join(baseDir, "redistricting-data", fmt.Sprintf("%4d", year))
 
 	var fname string
 	switch sumlevel {
@@ -79,27 +90,126 @@ func main() {
 
 	out = gob.NewEncoder(gid)
 
-	files, err := ioutil.ReadDir(dir)
-	if err != nil {
-		panic(err)
-	}
-
 	var m int
-	for _, file := range files {
-		name := file.Name()
-		if strings.HasSuffix(name, ".zip") {
-			state := name[0:2]
-			n := doState(state)
-			fmt.Printf("Found %d records in state %s\n", n, state)
-			m += n
-		}
+	for _, state := range seglib.States {
+		n := doState(state[1])
+		fmt.Printf("Found %d records in state %s\n", n, state[1])
+		m += n
 	}
 	fmt.Printf("Found %d records overall\n", m)
 }
 
+type demorect struct {
+	logrecno  string
+	totpop    int
+	whiteonly int
+	blackonly int
+}
+
+func (dr *demorect) parse2010(demorec []string) {
+
+	dr.logrecno = demorec[4]
+
+	var err error
+	dr.totpop, err = strconv.Atoi(demorec[76])
+	if err != nil {
+		panic(err)
+	}
+
+	dr.whiteonly, err = strconv.Atoi(demorec[80])
+	if err != nil {
+		panic(err)
+	}
+
+	dr.blackonly, err = strconv.Atoi(demorec[81])
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (dr *demorect) parse2000(demorec []string) {
+
+	// It appears to be the same as 2010
+	dr.parse2010(demorec)
+}
+
+type georect struct {
+	sumlevel   string
+	stateid    string
+	county     string
+	cousubPart string
+	tractPart  string
+	blkgrpPart string
+	logrecno   string
+	name       string
+	cbsa       string
+	lat        float64
+	lon        float64
+}
+
+func (gr *georect) parse2010(georec string) {
+
+	gr.sumlevel = georec[8 : 8+3]
+	gr.stateid = georec[27 : 27+2]
+	gr.county = georec[29 : 29+3]
+	gr.cousubPart = georec[36 : 36+5]
+	gr.tractPart = strings.TrimSpace(georec[54 : 54+6])
+	gr.blkgrpPart = strings.TrimSpace(georec[60 : 60+1])
+	gr.logrecno = georec[18 : 18+7]
+	gr.name = strings.TrimSpace(georec[226 : 226+90])
+	gr.cbsa = georec[112 : 112+5]
+
+	var err error
+	gr.lat, err = strconv.ParseFloat(georec[336:336+11], 64)
+	if err != nil {
+		panic(err)
+	}
+	gr.lon, err = strconv.ParseFloat(georec[347:347+12], 64)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (gr *georect) parse2000(georec string) {
+
+	gr.sumlevel = georec[8 : 8+3]
+	gr.stateid = georec[29 : 29+2]
+	gr.county = georec[31 : 31+3]
+	gr.cousubPart = georec[36 : 36+5]
+	gr.tractPart = strings.TrimSpace(georec[55 : 55+6])
+	gr.blkgrpPart = strings.TrimSpace(georec[61 : 61+1])
+	gr.logrecno = georec[18 : 18+7]
+	gr.name = strings.TrimSpace(georec[200 : 200+90])
+	gr.cbsa = georec[106 : 106+4] // CMSA
+
+	var err error
+	gr.lat, err = strconv.ParseFloat(georec[310:310+9], 64)
+	if err != nil {
+		panic(err)
+	}
+	gr.lon, err = strconv.ParseFloat(georec[319:319+10], 64)
+	if err != nil {
+		panic(err)
+	}
+
+	// No decimal place in the these files
+	gr.lat /= 1e6
+	gr.lon /= 1e6
+}
+
 func doState(state string) int {
 
-	pa := path.Join(dir, fmt.Sprintf("%sgeo%4d.pl.gz", state, year))
+	var gfn string
+	switch year {
+	case 1990:
+		panic("invalid year")
+	case 2000:
+		gfn = fmt.Sprintf("%sgeo.upl.gz", state)
+	case 2010:
+		gfn = fmt.Sprintf("%sgeo%4d.pl.gz", state, year)
+	}
+
+	pa := path.Join(dir, gfn)
 	geof, err := os.Open(pa)
 	if err != nil {
 		panic(err)
@@ -110,7 +220,17 @@ func doState(state string) int {
 		panic(err)
 	}
 
-	pa = path.Join(dir, fmt.Sprintf("%s00001%4d.pl.gz", state, year))
+	var dfn string
+	switch year {
+	case 1990:
+		panic("invalid year")
+	case 2000:
+		dfn = fmt.Sprintf("%s00001.upl.gz", state)
+	case 2010:
+		dfn = fmt.Sprintf("%s00001%4d.pl.gz", state, year)
+	}
+
+	pa = path.Join(dir, dfn)
 	demof, err := os.Open(pa)
 	if err != nil {
 		panic(err)
@@ -125,6 +245,8 @@ func doState(state string) int {
 	geoscanner := bufio.NewScanner(geoz)
 
 	var n int
+	grt := new(georect)
+	drt := new(demorect)
 	for {
 		demorec, err := democsv.Read()
 		if err == io.EOF {
@@ -138,92 +260,64 @@ func doState(state string) int {
 		}
 		georec := geoscanner.Text()
 
-		// Keep only one type of region
-		sumlev := georec[8 : 8+3]
+		switch year {
+		case 2010:
+			drt.parse2010(demorec)
+			grt.parse2010(georec)
+		case 2000:
+			drt.parse2000(demorec)
+			grt.parse2000(georec)
+		default:
+			panic("invalid year")
+		}
 
 		switch sumlevel {
 		case seglib.CountySubdivision:
-			if sumlev != "060" {
+			if grt.sumlevel != sumlevelCodes[0] {
 				continue
 			}
 		case seglib.Tract:
-			if sumlev != "140" {
+			if grt.sumlevel != sumlevelCodes[1] {
 				continue
 			}
 		case seglib.BlockGroup:
-			if sumlev != "150" {
+			if grt.sumlevel != sumlevelCodes[2] {
 				continue
 			}
 		default:
 			panic("Unrecognized summary level\n")
 		}
 
-		stateid := georec[27 : 27+2]
-		county := georec[29 : 29+3]
-		cousubPart := georec[36 : 36+5]
-		tractPart := strings.TrimSpace(georec[54 : 54+6])
-		blkgrpPart := strings.TrimSpace(georec[60 : 60+1])
-
 		var tract, blockgrp, cousub string
 		switch sumlevel {
 		case seglib.CountySubdivision:
-			cousub = stateid + county + cousubPart
+			cousub = grt.stateid + grt.county + grt.cousubPart
 		case seglib.Tract:
-			tract = stateid + county + tractPart
+			tract = grt.stateid + grt.county + grt.tractPart
 		case seglib.BlockGroup:
-			blockgrp = stateid + county + tractPart + blkgrpPart
+			blockgrp = grt.stateid + grt.county + grt.tractPart + grt.blkgrpPart
 		default:
-			panic("unkown sumlevel")
+			panic("unknown sumlevel")
 		}
 
-		logrecno := georec[18 : 18+7]
-		if logrecno != demorec[4] {
+		if grt.logrecno != drt.logrecno {
 			panic("Record number mismatch\n")
-		}
-
-		name := strings.TrimSpace(georec[226 : 226+90])
-		cbsa := georec[112 : 112+5]
-
-		lat, err := strconv.ParseFloat(georec[336:336+11], 64)
-		if err != nil {
-			panic(err)
-		}
-		lon, err := strconv.ParseFloat(georec[347:347+12], 64)
-		if err != nil {
-			panic(err)
-		}
-
-		totpop, err := strconv.Atoi(demorec[76])
-		if err != nil {
-			panic(err)
-		}
-
-		// Non-Hispanic white (one race)
-		whiteonly, err := strconv.Atoi(demorec[80])
-		if err != nil {
-			panic(err)
-		}
-
-		// Non-Hispanic black (one race)
-		blackonly, err := strconv.Atoi(demorec[81])
-		if err != nil {
-			panic(err)
 		}
 
 		s := seglib.Region{
 			State:        state,
-			StateId:      stateid,
-			County:       county,
+			StateId:      grt.stateid,
+			County:       grt.county,
 			Cousub:       cousub,
 			Tract:        tract,
 			BlockGroup:   blockgrp,
-			Name:         name,
+			Name:         grt.name,
 			Type:         seglib.Tract,
-			CBSA:         cbsa,
-			Location:     orb.Point{lon, lat},
-			TotalPop:     totpop,
-			BlackOnlyPop: blackonly,
-			WhiteOnlyPop: whiteonly,
+			CBSA:         grt.cbsa,
+			Location:     orb.Point{grt.lon, grt.lat},
+			TotalPop:     drt.totpop,
+			BlackOnlyPop: drt.blackonly,
+			WhiteOnlyPop: drt.whiteonly,
 		}
 
 		err = out.Encode(&s)

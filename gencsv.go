@@ -52,12 +52,16 @@ func main() {
 	dec := gob.NewDecoder(ing)
 
 	// Write out the header
-	head := []string{"State", "StateId", "County", "Cousub", "Tract", "BlockGroup", "CBSA", "Name", "Lon", "Lat",
+	head := []string{
+		"State", "StateId", "County", "Cousub", "Tract", "BlockGroup", "CBSA", "Name", "Lon", "Lat",
 		"TotalPop", "BlackOnlyPop", "WhiteOnlyPop",
 		"CBSATotalPop", "CBSABlackOnlyPop", "CBSAWhiteOnlyPop",
 		"PCBSATotalPop", "PCBSABlackOnlyPop", "PCBSAWhiteOnlyPop",
-		"LocalEntropy", "RegionalEntropy", "BlackIsolation",
-		"WhiteIsolation", "BODissimilarity", "WODissimilarity", "Neighbors", "RegionPop", "RegionRadius"}
+		"LocalEntropy", "RegionalEntropy",
+		"BlackIsolation", "WhiteIsolation", "BlackIsolationResid", "WhiteIsolationResid",
+		"BODissimilarity", "WODissimilarity", "BODissimilarityResid", "WODissimilarityResid",
+		"Neighbors", "RegionPop", "RegionRadius",
+	}
 	err = outw.Write(head)
 	if err != nil {
 		panic(err)
@@ -96,14 +100,18 @@ func main() {
 		cr[20] = fmt.Sprintf("%.3f", r.RegionalEntropy)
 		cr[21] = fmt.Sprintf("%.3f", r.BlackIsolation)
 		cr[22] = fmt.Sprintf("%.3f", r.WhiteIsolation)
-		cr[23] = fmt.Sprintf("%.3f", r.BODissimilarity)
-		cr[24] = fmt.Sprintf("%.3f", r.WODissimilarity)
-		cr[25] = fmt.Sprintf("%d", r.Neighbors)
-		cr[26] = fmt.Sprintf("%d", r.RegionPop)
-		cr[27] = fmt.Sprintf("%.2f", r.RegionRadius)
+		cr[23] = fmt.Sprintf("%.3f", r.BlackIsolationResid)
+		cr[24] = fmt.Sprintf("%.3f", r.WhiteIsolationResid)
+		cr[25] = fmt.Sprintf("%.3f", r.BODissimilarity)
+		cr[26] = fmt.Sprintf("%.3f", r.WODissimilarity)
+		cr[27] = fmt.Sprintf("%.3f", r.BODissimilarityResid)
+		cr[28] = fmt.Sprintf("%.3f", r.WODissimilarityResid)
+		cr[29] = fmt.Sprintf("%d", r.Neighbors)
+		cr[30] = fmt.Sprintf("%d", r.RegionPop)
+		cr[31] = fmt.Sprintf("%.2f", r.RegionRadius)
 
 		if len(head) != len(cr) {
-			panic("len(head) ! = len(cr)\n[]")
+			panic("len(head) ! = len(cr)\n")
 		}
 
 		err = outw.Write(cr)
