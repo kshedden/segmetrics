@@ -46,11 +46,17 @@ type Region struct {
 	PBlack float64
 	PWhite float64
 
-	BlackIsolation float64
-	WhiteIsolation float64
+	// Isolation measures
+	BlackIsolation      float64
+	WhiteIsolation      float64
+	BlackIsolationResid float64
+	WhiteIsolationResid float64
 
-	BODissimilarity float64
-	WODissimilarity float64
+	// Dissimilarity measures
+	BODissimilarity      float64
+	WODissimilarity      float64
+	BODissimilarityResid float64
+	WODissimilarityResid float64
 
 	LocalEntropy    float64
 	RegionalEntropy float64
