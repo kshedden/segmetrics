@@ -7,8 +7,10 @@ import (
 	"io"
 	"math"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/kshedden/segregation/seglib"
 	"gonum.org/v1/gonum/floats"
@@ -16,6 +18,9 @@ import (
 
 var (
 	sumlevel seglib.RegionType
+
+	// 99999 for 2010, 9999 for 2000
+	nullCBSA string
 )
 
 type locPoly struct {
@@ -86,7 +91,7 @@ func processUrban(regs []*seglib.Region, sel func(*seglib.Region) float64, set f
 
 	var x, y []float64
 	for _, r := range regs {
-		if r.CBSA != "99999" {
+		if r.CBSA != nullCBSA {
 			x = append(x, math.Log(1+float64(r.CBSATotalPop)))
 			y = append(y, sel(r))
 		}
@@ -94,19 +99,26 @@ func processUrban(regs []*seglib.Region, sel func(*seglib.Region) float64, set f
 
 	lp := newlocPoly(y, x)
 
+	var wg sync.WaitGroup
+
 	for _, r := range regs {
-		if r.CBSA != "99999" {
-			yh := lp.fit(math.Log(1+float64(r.CBSATotalPop)), 0.5)
-			set(r, sel(r)-yh)
+		if r.CBSA != nullCBSA {
+			wg.Add(1)
+			go func(r *seglib.Region) {
+				yh := lp.fit(math.Log(1+float64(r.CBSATotalPop)), 0.5)
+				set(r, sel(r)-yh)
+				wg.Done()
+			}(r)
 		}
 	}
+	wg.Wait()
 }
 
 func processRural(regs []*seglib.Region, sel func(*seglib.Region) float64, set func(*seglib.Region, float64)) {
 
 	var x, y []float64
 	for _, r := range regs {
-		if r.CBSA == "99999" {
+		if r.CBSA == nullCBSA {
 			x = append(x, math.Log(1+float64(r.PCBSATotalPop)))
 			y = append(y, sel(r))
 		}
@@ -114,12 +126,19 @@ func processRural(regs []*seglib.Region, sel func(*seglib.Region) float64, set f
 
 	lp := newlocPoly(y, x)
 
+	var wg sync.WaitGroup
+
 	for _, r := range regs {
-		if r.CBSA == "99999" {
-			yh := lp.fit(math.Log(1+float64(r.PCBSATotalPop)), 0.5)
-			set(r, sel(r)-yh)
+		if r.CBSA == nullCBSA {
+			wg.Add(1)
+			go func(r *seglib.Region) {
+				yh := lp.fit(math.Log(1+float64(r.PCBSATotalPop)), 0.5)
+				set(r, sel(r)-yh)
+				wg.Done()
+			}(r)
 		}
 	}
+	wg.Wait()
 }
 
 func load(inName string) []*seglib.Region {
@@ -171,6 +190,16 @@ func main() {
 		panic("Invalid input file\n")
 	}
 	fmt.Printf("Reading unnormalized results from from '%s'\n", inName)
+
+	fp := regexp.MustCompile(`[_\.]`).Split(inName, -1)
+	switch fp[2] {
+	case "2010":
+		nullCBSA = "99999"
+	case "2000":
+		nullCBSA = "9999"
+	default:
+		panic(fmt.Sprintf("unknown year: %s\n", fp[2]))
+	}
 
 	regs := load(inName)
 

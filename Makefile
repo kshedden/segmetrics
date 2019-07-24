@@ -50,14 +50,18 @@ gencsv_2000: FORCE
 	go run cmds.go gencsv tract 2000 "25000,45000,65000" | rush {}
 	go run cmds.go gencsv blockgroup 2000 "25000,45000,65000" | rush {}
 
-upload: FORCE
+upload_2010: FORCE
 	go run cmds.go upload cousub 2010 "25000,45000,65000" | rush {} "remote:SegregationMetrics"
 	go run cmds.go upload tract 2010 "25000,45000,65000" | rush {} "remote:SegregationMetrics"
 	go run cmds.go upload blockgroup 2010 "25000,45000,65000" | rush {} "remote:SegregationMetrics"
-	rclone copy segregation.pdf "remote:SegregationMetrics"
+	rclone copy segregation_2010.pdf "remote:SegregationMetrics"
+	rclone copy /dsi/stage/stage/cscar-census/redistricting-data/docs/pl94-171-2010.pdf "remote:SegregationMetrics/docs"
+
+upload_2000: FORCE
+	go run cmds.go upload cousub 2000 "25000,45000,65000" | rush {} "remote:SegregationMetrics"
+	go run cmds.go upload tract 2000 "25000,45000,65000" | rush {} "remote:SegregationMetrics"
+	go run cmds.go upload blockgroup 2000 "25000,45000,65000" | rush {} "remote:SegregationMetrics"
+	rclone copy segregation_2000.pdf "remote:SegregationMetrics"
+	rclone copy /dsi/stage/stage/cscar-census/redistricting-data/docs/pl94-171-2000.pdf "remote:SegregationMetrics/docs"
 
 FORCE:
-
-
-
-
