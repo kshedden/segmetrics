@@ -24,12 +24,11 @@ import (
 	"gonum.org/v1/gonum/floats"
 )
 
-const (
-	NullCBSA = "99999"
-)
-
 var (
 	year int
+
+	// 99999 for 2010, 9999 for 2000
+	nullCBSA string
 
 	sumlevel seglib.RegionType
 
@@ -357,9 +356,13 @@ func main() {
 		panic(msg)
 	}
 
-	if year != 2010 && year != 2000 {
-		msg := fmt.Sprintf("Invalid year '%d'\n", year)
-		panic(msg)
+	switch year {
+	case 2010:
+		nullCBSA = "99999"
+	case 2000:
+		nullCBSA = "9999"
+	default:
+		panic("Invalid year")
 	}
 
 	if sumlevel == seglib.CountySubdivision && targetpop != 0 {
@@ -479,45 +482,43 @@ func main() {
 
 		// Isolation and dissimilarity measures
 		{
-			numer := float64(nTotal - nBlack)
-			var denom float64
-			if r.CBSA == NullCBSA {
+			var numer, denom float64
+			if r.CBSA == nullCBSA {
+				numer = float64(r.TotalPop - r.BlackOnlyPop)
 				denom = float64(r.PCBSATotalPop - r.PCBSABlackOnlyPop)
 			} else {
+				numer = float64(nTotal - nBlack)
 				denom = float64(r.CBSATotalPop - r.CBSABlackOnlyPop)
 			}
 			r.BlackIsolation = clip01(1 - numer/denom)
 
 			var qr1, qr2 float64
-			if r.CBSA == NullCBSA {
-				qr1 = float64(nBlack) / float64(r.PCBSABlackOnlyPop)
-				qr1 = clip01(qr1)
-				qr2 = float64(nTotal-nBlack) / float64(r.PCBSATotalPop-r.PCBSABlackOnlyPop)
-				qr2 = clip01(qr2)
+			if r.CBSA == nullCBSA {
+				qr1 = float64(r.BlackOnlyPop) / float64(r.PCBSABlackOnlyPop)
+				qr2 = float64(r.TotalPop-r.BlackOnlyPop) / float64(r.PCBSATotalPop-r.PCBSABlackOnlyPop)
 			} else {
 				qr1 = float64(nBlack) / float64(r.CBSABlackOnlyPop)
-				qr1 = clip01(qr1)
 				qr2 = float64(nTotal-nBlack) / float64(r.CBSATotalPop-r.CBSABlackOnlyPop)
-				qr2 = clip01(qr2)
 			}
-			r.BODissimilarity = math.Abs(qr1 - qr2)
+			r.BODissimilarity = math.Abs(clip01(qr1) - clip01(qr2))
 
-			numer = float64(nTotal - nWhite)
-			if r.CBSA == NullCBSA {
+			if r.CBSA == nullCBSA {
+				numer = float64(r.TotalPop - r.WhiteOnlyPop)
 				denom = float64(r.PCBSATotalPop - r.PCBSAWhiteOnlyPop)
 			} else {
+				numer = float64(nTotal - nWhite)
 				denom = float64(r.CBSATotalPop - r.CBSAWhiteOnlyPop)
 			}
 			r.WhiteIsolation = clip01(1 - numer/denom)
 
-			if r.CBSA == NullCBSA {
+			if r.CBSA == nullCBSA {
 				qr1 = float64(nWhite) / float64(r.PCBSAWhiteOnlyPop)
 				qr2 = float64(nTotal-nWhite) / float64(r.PCBSATotalPop-r.PCBSAWhiteOnlyPop)
 			} else {
 				qr1 = float64(nWhite) / float64(r.CBSAWhiteOnlyPop)
 				qr2 = float64(nTotal-nWhite) / float64(r.CBSATotalPop-r.CBSAWhiteOnlyPop)
 			}
-			r.WODissimilarity = math.Abs(qr1 - qr2)
+			r.WODissimilarity = math.Abs(clip01(qr1) - clip01(qr2))
 		}
 
 		// Regional entropy

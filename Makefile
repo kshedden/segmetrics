@@ -22,6 +22,10 @@ blockgroup_metrics_2010: FORCE
 blockgroup_metrics_2000: FORCE
 	go run cmds.go metrics blockgroup 2000 "25000,45000,65000" | rush {}
 
+metrics_2010: cousub_metrics_2010 tract_metrics_2010 blockgroup_metrics_2010
+
+metrics_2000: cousub_metrics_2000 tract_metrics_2000 blockgroup_metrics_2000
+
 cousub_normalize_2010: FORCE
 	go run cmds.go normalize cousub 2010 "25000,45000,65000" | rush {}
 
@@ -30,6 +34,10 @@ tract_normalize_2010: FORCE
 
 blockgroup_normalize_2010: FORCE
 	go run cmds.go normalize blockgroup 2010 "25000,45000,65000" | rush {}
+
+normalize_2010: cousub_normalize_2010 tract_normalize_2010 blockgroup_normalize_2010
+
+normalize_2000: cousub_normalize_2000 tract_normalize_2000 blockgroup_normalize_2000
 
 cousub_normalize_2000: FORCE
 	go run cmds.go normalize cousub 2000 "25000,45000,65000" | rush {}
