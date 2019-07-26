@@ -30,6 +30,8 @@ def do_all(region, siz):
         df = pd.read_csv("segregation_%s_%4d_%d_norm.csv.gz" % (region, year, siz), dtype={"CBSA": str})
         title = "%4d %ss, %d person buffers" % (year, region, siz)
 
+    df = df.loc[df.RegionPop > 0, :]
+
     for jx in 0, 1:
 
         if jx == 0:
@@ -172,12 +174,13 @@ def do_all(region, siz):
 
         plt.clf()
         plt.title(title)
-        plt.hist(dm.WODissimilarityResid.dropna(), bins=100)
+        with pd.option_context('mode.use_inf_as_null', True):
+            plt.hist(dm.WODissimilarityResid.dropna(), bins=100)
         plt.xlabel("Adjusted white/others dissimilarity based on %s" % xn)
         plt.ylabel("Frequency")
         pdf.savefig()
 
-    va = ["CBSATotalPop", "PCBSATotalPop"]
+    va = ["CBSATotalPop", "PCBSATotalPop", "RegionPop"]
     u = [
             ["BODissimilarity", "BODissimilarityResid"],
             ["WODissimilarity", "WODissimilarityResid"],
@@ -212,6 +215,17 @@ def do_all(region, siz):
                 plt.xlabel("log outer region population based on %s" % xn)
                 plt.ylabel("%s baesd on %s" % (ux[k], xn))
                 pdf.savefig()
+
+                if region == "cousub":
+                    # Inner region size only varies for cousubs
+                    plt.clf()
+                    plt.axes([0.18, 0.1, 0.75, 0.8])
+                    plt.title(title)
+                    plt.grid(True)
+                    plt.plot(np.log(1 + dm.RegionPop), dm[ux[k]], 'o', alpha=0.7, rasterized=True)
+                    plt.xlabel("log inner region population based on %s" % xn)
+                    plt.ylabel("%s based on %s" % (ux[k], xn))
+                    pdf.savefig()
 
             plt.clf()
             plt.axes([0.18, 0.1, 0.75, 0.8])
